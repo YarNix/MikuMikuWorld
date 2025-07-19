@@ -113,7 +113,8 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 GLFWdropfun MikuMikuWorld::defaultDropFun = NULL;
 void MikuMikuWorld::windowDropCallback(GLFWwindow *window, int path_count, const char *paths[])
 {
-	for (int i = 0; i < path_count && path_count > 0; i++) {
+	for (int i = 0; i < path_count && path_count > 0; i++)
+	{
 		std::string path = paths[i];
 		if (IO::File::exists(path))
 			app.appendOpenFile(path);

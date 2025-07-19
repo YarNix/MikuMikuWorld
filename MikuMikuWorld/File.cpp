@@ -85,7 +85,8 @@ namespace IO
 		std::string line{};
 		std::getline(*stream, line);
 #ifndef MMW_WINDOWS
-		if (const auto crPos = line.find('\r'); crPos != std::string::npos) {
+		if (const auto crPos = line.find('\r'); crPos != std::string::npos)
+		{
 			line = line.substr(0, crPos);
 		}
 #endif

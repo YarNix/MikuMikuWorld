@@ -258,8 +258,10 @@ FILE *Platform::OpenFile(const std::string &filename, const std::string &mode)
 // Return true if successful
 // Optionally direct the child stdout to a pipe
 // Optionally return the id of the child process
-static bool StartProcess(const char* file, char* const* args, int* outfd = nullptr, pid_t* child = nullptr) {
-	union {
+static bool StartProcess(const char* file, char* const* args, int* outfd = nullptr, pid_t* child = nullptr)
+{
+	union
+	{
 		int fd[2];
 		struct { int read; int write; };
 	} channels;
@@ -269,7 +271,8 @@ static bool StartProcess(const char* file, char* const* args, int* outfd = nullp
 	pid_t p = vfork();
 	if (p < 0) 
 		return false;
-	if (p == 0) {
+	if (p == 0)
+	{
 		// Child process
 		int null = open("/dev/null", O_WRONLY);
 		
@@ -283,7 +286,8 @@ static bool StartProcess(const char* file, char* const* args, int* outfd = nullp
 		execvp(file, args);
 		_exit(-1);
 	}
-	else {
+	else
+	{
 		// Parent process
 		close(channels.write);
 		if (outfd)
@@ -301,11 +305,13 @@ struct XErrorTryCatch;
 static XErrorTryCatch* instance;
 static int Handler(Display *display, XErrorEvent *error);
 
-struct XErrorTryCatch {
+struct XErrorTryCatch
+{
 	bool has_error = false;
 	XErrorHandler previous_handler = NULL;
 
-	XErrorTryCatch() {
+	XErrorTryCatch()
+	{
 		previous_handler = XSetErrorHandler(Handler);
 		instance = this;
 	}
@@ -313,9 +319,11 @@ struct XErrorTryCatch {
 	XErrorTryCatch(XErrorTryCatch const&) = delete;
 };
 
-static int Handler(Display *display, XErrorEvent *error) {
+static int Handler(Display *display, XErrorEvent *error)
+{
 	instance->has_error = true;
-	switch(error->error_code) {
+	switch(error->error_code)
+	{
 		case BadAlloc:
 		case BadValue:
 		case BadWindow:
@@ -333,7 +341,8 @@ static int Handler(Display *display, XErrorEvent *error) {
 
 // Called by ZenityOpen to set the opened dialog window as child of the current window (if possible)
 // Note that this only works on X11. There is no way to do this on Wayland
-static void SetWindowTransient(pid_t target, int& stat) noexcept {
+static void SetWindowTransient(pid_t target, int& stat) noexcept
+{
 	XErrorTryCatch tc;
 	struct find_xwindow_with_pid
 	{
@@ -343,15 +352,18 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 		Atom pid_atom;
 		XErrorTryCatch& try_catch;
 
-		find_xwindow_with_pid(pid_t pid, Display* display, XErrorTryCatch& tc) : pid{pid}, display{display}, result{}, try_catch{tc} {
+		find_xwindow_with_pid(pid_t pid, Display* display, XErrorTryCatch& tc) : pid{pid}, display{display}, result{}, try_catch{tc}
+		{
 			pid_atom = XInternAtom(display, "_NET_WM_PID", True);
-			if (pid_atom == 0) {
+			if (pid_atom == 0)
+			{
 				try_catch.has_error = true;
 				fputs("find_xwindow_with_pid: _NET_WM_PID atom not found!", stderr);
 			}
 		}
 
-		std::vector<Window>& operator()(Window current) {
+		std::vector<Window>& operator()(Window current)
+		{
 			Atom           type;
 			int            format;
 			unsigned long  nItems;
@@ -366,9 +378,11 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 			Window  wParent;
 			Window* wChild;
 			unsigned  nChildren;
-			if (XQueryTree(display, current, &wRoot, &wParent, &wChild, &nChildren)) {
+			if (XQueryTree(display, current, &wRoot, &wParent, &wChild, &nChildren))
+			{
 				if(try_catch.has_error) return result;
-				for (unsigned i = 0; i < nChildren; i++) {
+				for (unsigned i = 0; i < nChildren; i++)
+				{
 					this->operator()(wChild[i]);
 					if(try_catch.has_error) return result;
 				}
@@ -383,7 +397,8 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 		}
 	};
 	Display* display = glfwGetX11Display();
-	if (display == NULL) {
+	if (display == NULL)
+	{
 		glfwGetError(nullptr); // clear the error
 		return;
 	}
@@ -402,10 +417,13 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 	using timer_clock_t = std::chrono::steady_clock;
 	std::chrono::time_point<timer_clock_t> start;
 
-	while (waitpid(target, &stat, WNOHANG) == 0) {
+	while (waitpid(target, &stat, WNOHANG) == 0)
+	{
 		std::vector<Window>& target_windows = window_finder(XDefaultRootWindow(display));
-		if (!target_windows.empty()) {
-			for (auto& window : target_windows) {
+		if (!target_windows.empty())
+		{
+			for (auto& window : target_windows)
+			{
 				Atom           type;
 				int            format;
 				unsigned long  nItems;
@@ -415,9 +433,11 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 				if (tc.has_error) return;
 
 				bool has_modal_flag = false;
-				if(props && type == XA_ATOM) {
+				if(props && type == XA_ATOM)
+				{
 					for (unsigned long i = 0; i < nItems; i++)
-						if (props[i] == STATE_NO_MODAL) {
+						if (props[i] == STATE_NO_MODAL)
+						{
 							has_modal_flag = true;
 							break;
 						}
@@ -425,7 +445,8 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 				if (props)
 					XFree(props);
 				
-				if (has_modal_flag) {
+				if (has_modal_flag)
+				{
 					XSetTransientForHint(display, window, parent_window);
 					if (tc.has_error) return;
 					Atom NET_WM_WINDOW_TYPE = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
@@ -443,11 +464,13 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 				}
 			}
 			// No modal window found? Maybe zenity is still initializing. Try waiting 5s
-			if (!timer_started) {
+			if (!timer_started)
+			{
 				start = timer_clock_t::now();
 				timer_started = true;
 			}
-			else {
+			else
+			{
 				auto duration = std::chrono::duration_cast<std::chrono::seconds>(timer_clock_t::now() - start).count();
 				if (duration > 5)
 					break;
@@ -457,7 +480,8 @@ static void SetWindowTransient(pid_t target, int& stat) noexcept {
 	}
 }
 
-static bool ZenityOpen(const std::vector<std::string>& arguments, std::string& output, int* exit_code = nullptr) {
+static bool ZenityOpen(const std::vector<std::string>& arguments, std::string& output, int* exit_code = nullptr)
+{
 	char buffer[256];
 	char zenity[] = "zenity", modal[] = "--modal";
 	std::vector<char*> args = { zenity };
@@ -482,7 +506,8 @@ static bool ZenityOpen(const std::vector<std::string>& arguments, std::string& o
 	if (nread < 0)
 		return false;
 	
-	if (exit_code) {
+	if (exit_code)
+	{
 		if (WIFEXITED(stat))
 			*exit_code = WEXITSTATUS(stat);
 		else
@@ -551,7 +576,8 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 	case IO::MessageBoxIcon::Information:
 		if (buttons == IO::MessageBoxButtons::Ok)
 			arguments.push_back("--info");
-		else {
+		else
+		{
 			arguments.push_back("--question");
 			arguments.push_back("--icon=dialog-information");
 			has_custom_button = true;
@@ -560,7 +586,8 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 	case IO::MessageBoxIcon::Warning:
 		if (buttons == IO::MessageBoxButtons::Ok)
 			arguments.push_back("--warning");
-		else {
+		else
+		{
 			arguments.push_back("--question");
 			arguments.push_back("--icon=dialog-warning");
 			has_custom_button = true;
@@ -569,7 +596,8 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 	case IO::MessageBoxIcon::Error:
 		if (buttons == IO::MessageBoxButtons::Ok)
 			arguments.push_back("--error");
-		else {
+		else
+		{
 			arguments.push_back("--question");
 			arguments.push_back("--icon=dialog-error");
 			has_custom_button = true;
@@ -602,7 +630,8 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 		labels[2] = Cancel;
 		break;
 	}
-	if (has_custom_button) {
+	if (has_custom_button)
+	{
 		if (labels[0] != None)
 			arguments.push_back(std::string("--ok-label=") + MESSAGE_BOX_RESPONSES[labels[0]]);
 		if (labels[1] != None)
@@ -617,7 +646,8 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 	std::string output;
 	int exit_code;
 	ZenityOpen(arguments, output, &exit_code);
-	switch (exit_code) {
+	switch (exit_code)
+	{
 		default: return IO::MessageBoxResult::None;
 		case 0: return MESSAGE_BOX_RESULT[labels[0]];
 		case 1:
@@ -632,14 +662,16 @@ IO::MessageBoxResult Platform::OpenMessageBox(const std::string &title, const st
 }
 
 // Fallback of GetCurrentLanguageCode using C/C++ locale library to determine the language
-static std::string GetLocaleCode() {
+static std::string GetLocaleCode()
+{
 	// Locale string is either a locale name in XPG format; or a list of catergory=name seperate by ';'
 	std::string locale_string = std::locale("").name();
 	if (locale_string == "*")
 		// Unnamed locale
 		return {};
 	size_t pos = locale_string.find("LC_CTYPE=");
-	if (pos != std::string::npos) {
+	if (pos != std::string::npos)
+	{
 		pos += 9;
 		size_t end_pos = locale_string.find(';', pos);
 		if (end_pos != std::string::npos)
@@ -656,7 +688,8 @@ static std::string GetLocaleCode() {
 }
 
 // Using linux environment to retrieve the code
-static std::string GetLanguageCode() {
+static std::string GetLanguageCode()
+{
 	const char* lang_env = getenv("LANGUAGE");
 	if (!lang_env)
 		return {};
@@ -664,7 +697,8 @@ static std::string GetLanguageCode() {
 	// Extract the language code
 	// language[_territory[.codeset]][@modifier]
 	size_t pos = languages.find_first_of("_.@");
-	while (pos != std::string::npos) {
+	while (pos != std::string::npos)
+	{
 		size_t end_pos = languages.find(':', pos);
 		if (end_pos != std::string::npos)
 			languages.erase(pos, end_pos - pos);
@@ -694,7 +728,8 @@ std::vector<std::string> Platform::GetCommandLineArgs()
 {
 	std::vector<std::string> cmdargs;
 	std::ifstream cmdline("/proc/self/cmdline", std::ios::binary | std::ios::in);
-	if (cmdline.is_open()) {
+	if (cmdline.is_open())
+	{
 		for (std::string arg; std::getline(cmdline, arg, '\0'); )
 			cmdargs.push_back(arg);
 	}
@@ -728,9 +763,11 @@ std::string Platform::GetResourcePath(const std::string& app_root)
 
 	// Checking environment path
 	const char* env_dir = getenv("XDG_DATA_DIRS");
-	if (env_dir && *env_dir != '\0') {
+	if (env_dir && *env_dir != '\0')
+	{
 		std::string_view data_dir_str = env_dir;
-		for (size_t pos = 0, end_pos = 0; end_pos != std::string_view::npos; pos = end_pos + 1) {
+		for (size_t pos = 0, end_pos = 0; end_pos != std::string_view::npos; pos = end_pos + 1)
+		{
 			end_pos = data_dir_str.find(':', pos + 1);
 			std::filesystem::path data_dir = data_dir_str.substr(pos, end_pos - pos);
 			data_dir /= DEB_PACKAGE_NAME;

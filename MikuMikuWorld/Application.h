@@ -89,7 +89,8 @@ namespace MikuMikuWorld
 #ifdef MMW_WINDOWS
 LRESULT CALLBACK wndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 #elif defined(MMW_LINUX)
-namespace MikuMikuWorld {
+namespace MikuMikuWorld
+{
 	extern GLFWdropfun defaultDropFun;
 	void windowDropCallback(GLFWwindow* window, int path_count, const char* paths[]);
 }

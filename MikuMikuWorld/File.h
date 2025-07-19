@@ -32,7 +32,8 @@ namespace IO
 		{
 			std::vector<std::string> parts{ args... };
 			std::string result;
-			for (const auto& part : parts) {
+			for (const auto& part : parts)
+			{
 				if (!result.empty() && result.back() != PATH_SEPARATOR)
 				{
 					result += PATH_SEPARATOR;

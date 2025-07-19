@@ -22,7 +22,8 @@
 
 #endif
 
-namespace IO {
+namespace IO
+{
 	enum class FileDialogResult : uint8_t;
 	enum class DialogType : uint8_t;
 	enum class DialogSelectType : uint8_t;
@@ -34,7 +35,8 @@ namespace IO {
 	enum class MessageBoxResult : uint8_t;
 }
 
-namespace Platform {
+namespace Platform
+{
 	void OpenUrl(const std::string& url);
 	IO::FileDialogResult OpenFileDialog(IO::DialogType type, IO::DialogSelectType selectType, IO::FileDialog& dialogOptions);
 	IO::MessageBoxResult OpenMessageBox(const std::string& title, const std::string& message, IO::MessageBoxButtons buttons, IO::MessageBoxIcon icon, void* parentWindow = nullptr);

@@ -106,7 +106,8 @@ namespace MikuMikuWorld
 		config.windowSize = windowState.size;
 		config.userColor = Color::fromImVec4(UI::accentColors[0]);
 
-		if (editor) {
+		if (editor)
+		{
 			editor->writeSettings();
 			config.write(IO::File::pathConcat(appDir, APP_CONFIG_FILENAME));
 		}
@@ -288,6 +289,7 @@ namespace MikuMikuWorld
 	void Application::loadResources()
 	{
 		ResourceManager::loadShader(IO::File::pathConcat(resDir, "shaders", "basic2d"));
+		ResourceManager::loadShader(IO::File::pathConcat(resDir, "shaders", "masking"));
 
 		const std::string texturesDir = IO::File::pathConcat(resDir, "textures", "");
 
@@ -297,6 +299,7 @@ namespace MikuMikuWorld
 		ResourceManager::loadTexture(texturesDir + "timeline_tools.png");
 		ResourceManager::loadTexture(texturesDir + "note_stats.png");
 		ResourceManager::loadTexture(texturesDir + "stage.png");
+		ResourceManager::loadTexture(texturesDir + "particles.png");
 
 		ResourceManager::loadTransform(texturesDir + "transform.txt");
 

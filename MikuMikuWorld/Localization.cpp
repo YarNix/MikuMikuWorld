@@ -22,11 +22,13 @@ namespace MikuMikuWorld
 	bool Localization::setLanguage(const std::string& code)
 	{
 		size_t pos = 0;
-		while (true) {
+		while (true)
+		{
 			size_t end_pos = code.find(':', pos); // support preference code like fr:ja:en
 			std::string language = end_pos == std::string::npos ? code.substr(pos) : code.substr(pos, end_pos - pos);
 			auto it = Localization::languages.find(language);
-			if (it != Localization::languages.end()) {
+			if (it != Localization::languages.end())
+			{
 				Localization::currentLanguage = it->second.get();
 				return true;
 			}
