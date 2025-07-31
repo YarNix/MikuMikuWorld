@@ -290,6 +290,7 @@ namespace MikuMikuWorld
 	{
 		ResourceManager::loadShader(IO::File::pathConcat(resDir, "shaders", "basic2d"));
 		ResourceManager::loadShader(IO::File::pathConcat(resDir, "shaders", "masking"));
+		ResourceManager::loadShader(IO::File::pathConcat(resDir, "shaders", "particles"));
 
 		const std::string texturesDir = IO::File::pathConcat(resDir, "textures", "");
 
