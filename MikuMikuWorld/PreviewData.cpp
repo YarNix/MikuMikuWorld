@@ -297,14 +297,18 @@ namespace MikuMikuWorld::Engine
 	static void addNoteEffect(DrawData &drawData, const Note &note, Score const &score)
 	{
 		ParticleEffectType circular = ParticleEffectType::Invalid, linear = ParticleEffectType::Invalid;
+		HoldNoteType holdType;
+		if (note.getType() == NoteType::Hold)
+			holdType = score.holdNotes.at(note.ID).startType;
+		else if (note.getType() == NoteType::HoldEnd)
+			holdType = score.holdNotes.at(note.parentID).endType;
 		switch (note.getType())
 		{
 		case NoteType::Hold:
-		{
-			HoldNoteType startStepType = score.holdNotes.at(note.ID).startType;
-			if (startStepType != HoldNoteType::Guide)
+			if (holdType != HoldNoteType::Guide)
 				addHoldSegmentNoteEffect(drawData, note, score);
-			if (startStepType != HoldNoteType::Normal)
+		case NoteType::HoldEnd:
+			if (holdType != HoldNoteType::Normal)
 				break;
 			if (!note.friction)
 				circular = !note.critical ? ParticleEffectType::NoteLongCircular : ParticleEffectType::NoteLongCriticalCircular;
@@ -312,7 +316,6 @@ namespace MikuMikuWorld::Engine
 				circular = !note.critical ? ParticleEffectType::NoteFrictionCircular : ParticleEffectType::NoteFrictionCriticalCircular;
 			linear = static_cast<ParticleEffectType>(static_cast<int>(circular) + 1);
 			break;
-		}
 		case NoteType::HoldMid:
 		{
 			auto& holdNotes = score.holdNotes.at(note.parentID);
@@ -323,9 +326,6 @@ namespace MikuMikuWorld::Engine
 			circular = !note.critical ? ParticleEffectType::NoteLongAmongCircular : ParticleEffectType::NoteLongAmongCriticalCircular;
 			break;
 		}
-		case NoteType::HoldEnd:
-			if (score.holdNotes.at(note.parentID).endType != HoldNoteType::Normal)
-				break;
 		case NoteType::Tap:
 			if (!note.friction)
 				if (note.flick == FlickType::None)
