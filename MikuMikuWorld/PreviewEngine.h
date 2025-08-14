@@ -71,13 +71,13 @@ namespace MikuMikuWorld
 
 		NoteCriticalCircular,
 		NoteCriticalLinear,
-		NoteCriticalDirectional,
 
 		NoteLongCriticalCircular,
 		NoteLongCriticalLinear,
 		
 		NoteCriticalFlickCircular,
 		NoteCriticalFlickLinear,
+		NoteCriticalDirectional,
 
 		NoteFrictionCriticalCircular,
 		NoteFrictionCriticalLinear,
