@@ -1,4 +1,4 @@
-#include <stack>
+#include <queue>
 #include <stdexcept>
 #include "PreviewData.h"
 #include "ApplicationConfiguration.h"
@@ -27,7 +27,27 @@ namespace MikuMikuWorld::Engine
 			return particleA.groupID < particleB.groupID;
 		}
 	};
+	
+	struct HiSpeedTimeRangeComparer
+	{
+		bool operator()(const HiSpeedChange& hispeed, const std::pair<int, int>& tickRange) {
+			return hispeed.tick < tickRange.first;
+		}
+		bool operator()(const std::pair<int, int>& tickRange, const HiSpeedChange& hispeed) {
+			return tickRange.second < hispeed.tick;
+		}
+	};
 
+	struct DrawingHoldStep
+	{
+		int tick;
+		float time;
+		float left;
+		float right;
+		EaseType ease;
+	};
+
+	static void addHoldNote(DrawData& drawData, const HoldNote& holdNote, Score const &score);
 	static bool ensureValidParticle(ParticleEffectType& demandType);
 	static void addParticleEffect(std::vector<DrawingParticle> &drawList, std::default_random_engine &rng, ParticleEffectType type, const Note &note, Score const &score, float effectDuration = NAN);
 	static void addLaneEffect(DrawData& drawData, const Note& note, Score const &score);
@@ -49,18 +69,15 @@ namespace MikuMikuWorld::Engine
 				auto& [id, note] = *rit;
 				maxTicks = std::max(note.tick, maxTicks);
 				NoteType type = note.getType();
-				bool hidden = false;
 				if (hasNoteEffect)
 					addNoteEffect(*this, note, score);
 				if (hasSlotEffect)
 					addSlotEffect(*this, note, score);
-				if (type == NoteType::Hold)
-					hidden = score.holdNotes.at(id).startType != HoldNoteType::Normal;
-				else if (type == NoteType::HoldEnd)
-					hidden = score.holdNotes.at(note.parentID).endType != HoldNoteType::Normal;
-				if (hidden)
-					continue;
 				if (type == NoteType::HoldMid)
+					continue;
+				else if (type == NoteType::Hold && score.holdNotes.at(id).startType != HoldNoteType::Normal)
+					continue;
+				else if (type == NoteType::HoldEnd && score.holdNotes.at(note.parentID).endType != HoldNoteType::Normal)
 					continue;
 				if (hasLaneEffect)
 					addLaneEffect(*this, note, score);
@@ -87,68 +104,10 @@ namespace MikuMikuWorld::Engine
 					drawingLines.push_back(DrawingLine{x_range, visual_tm});
 			}
 
-			std::stack<HoldStep const*> skipStepIDs;
 			float noteDuration = getNoteDuration(noteSpeed);
 			for (auto rit = score.holdNotes.rbegin(), rend = score.holdNotes.rend(); rit != rend; rit++)
 			{
-				auto& [id, holdNote] = *rit;
-				const Note& startNote = score.notes.at(holdNote.start.ID), endNote = score.notes.at(holdNote.end);
-				float start_tm = accumulateDuration(startNote.tick, TICKS_PER_BEAT, score.tempoChanges);
-				auto it = holdNote.steps.begin(), end = holdNote.steps.end();
-				for (const HoldStep* head = &holdNote.start, *tail; head != nullptr; head = tail)
-				{
-					while (it != end && it->type == HoldStepType::Skip)
-					{
-						skipStepIDs.push(&(*it));
-						++it;
-					}
-					tail = it != end ? &(*it) : nullptr;
-					const Note& headNote = score.notes.at(head->ID), tailNote = score.notes.at(tail ? tail->ID : holdNote.end);
-					float head_scaled_tm = accumulateScaledDuration(headNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
-					float tail_scaled_tm = accumulateScaledDuration(tailNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
-
-					drawingHoldSegments.push_back(DrawingHoldSegment {
-						holdNote.end,
-						headNote.ID,
-						tailNote.ID,
-						head_scaled_tm,
-						tail_scaled_tm,
-						start_tm,
-						head->ease,
-						holdNote.isGuide(),
-					});
-
-					while(skipStepIDs.size())
-					{
-						const HoldStep& skipStep = *skipStepIDs.top();
-						const Note& skipNote = score.notes.at(skipStep.ID);
-						float step_scaled_tm = accumulateScaledDuration(skipNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
-						auto ease = getEaseFunction(head->ease);
-						float headLeft = Engine::laneToLeft(headNote.lane);
-						float headRight = Engine::laneToLeft(headNote.lane) + headNote.width;
-						float tailLeft = Engine::laneToLeft(tailNote.lane);
-						float tailRight = Engine::laneToLeft(tailNote.lane) + tailNote.width;
-						float stepT = unlerp(head_scaled_tm, tail_scaled_tm, step_scaled_tm);
-						float stepLeft = ease(headLeft, tailLeft, stepT);
-						float stepRight = ease(headRight, tailRight, stepT);
-						drawingHoldTicks.push_back(DrawingHoldTick{
-							skipStep.ID,
-							stepLeft + (stepRight - stepLeft) / 2,
-							{step_scaled_tm - noteDuration, step_scaled_tm}
-						});
-						skipStepIDs.pop();
-					}
-					if (tail && tail->type != HoldStepType::Hidden)
-					{
-						float tick_scaled_tm = accumulateScaledDuration(tailNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
-						drawingHoldTicks.push_back(DrawingHoldTick{
-							tailNote.ID,
-							getNoteCenter(tailNote),
-							{tick_scaled_tm - noteDuration, tick_scaled_tm}
-						});
-					}
-					if (it != end) ++it;
-				}
+				addHoldNote(*this, rit->second, score);
 			}
 		}
 		catch(const std::out_of_range& ex)
@@ -171,6 +130,125 @@ namespace MikuMikuWorld::Engine
 		drawingSlotGlowEffects.clear();
 		maxTicks = 1;
 		rng.seed((uint32_t)time(nullptr));
+	}
+
+	void addHoldNote(DrawData &drawData, const HoldNote &holdNote, Score const &score)
+	{
+		float noteDuration = getNoteDuration(drawData.noteSpeed);
+		const Note& startNote = score.notes.at(holdNote.start.ID), endNote = score.notes.at(holdNote.end);
+		float activeTime = accumulateDuration(startNote.tick, TICKS_PER_BEAT, score.tempoChanges);
+		float startTime = activeTime;
+		DrawingHoldStep head = {
+			startNote.tick,
+			accumulateScaledDuration(startNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
+			Engine::laneToLeft(startNote.lane),
+			Engine::laneToLeft(startNote.lane) + startNote.width,
+			holdNote.start.ease
+		};
+		std::queue<HiSpeedChange> hispeedSteps;
+		auto&& [spdIt, spdEnd] = std::equal_range(score.hiSpeedChanges.begin(), score.hiSpeedChanges.end(), std::make_pair(startNote.tick, endNote.tick), HiSpeedTimeRangeComparer());
+		while (spdIt != spdEnd)
+			hispeedSteps.push(*spdIt++);
+		for (ptrdiff_t headIdx = -1, tailIdx = 0, stepSz = holdNote.steps.size(); headIdx < stepSz; ++tailIdx)
+		{
+			if (tailIdx < stepSz && holdNote.steps[tailIdx].type == HoldStepType::Skip)
+				continue;
+			HoldStep tailStep = tailIdx == stepSz ? HoldStep{ holdNote.end, HoldStepType::Hidden } : holdNote.steps[tailIdx];
+			const Note& tailNote = score.notes.at(tailStep.ID);
+			while (!hispeedSteps.empty() && hispeedSteps.front().tick < tailNote.tick)
+			{
+				// Hispeed implicitly create a step between the segments
+				auto& hispeedStep = hispeedSteps.front();
+				float t = unlerp(head.tick, tailNote.tick, hispeedStep.tick);
+				auto easeFunction = getEaseFunction(head.ease);
+				DrawingHoldStep tail = {
+					hispeedStep.tick,
+					accumulateScaledDuration(hispeedStep.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
+					easeFunction(head.left, Engine::laneToLeft(tailNote.lane), t),
+					easeFunction(head.right, Engine::laneToLeft(tailNote.lane) + tailNote.width, t),
+					head.ease
+				};
+				float endTime = accumulateDuration(hispeedStep.tick, TICKS_PER_BEAT, score.tempoChanges);
+				drawData.drawingHoldSegments.push_back(DrawingHoldSegment {
+					holdNote.end,
+					head.time, head.left, head.right,
+					tail.time, tail.left, tail.right,
+					startTime, endTime,
+					activeTime,
+					head.ease,
+					holdNote.isGuide(),
+				});
+				startTime = endTime;
+				while ((headIdx + 1) < tailIdx)
+				{
+					const HoldStep& skipStep = holdNote.steps[headIdx + 1];
+					const Note& skipNote = score.notes.at(skipStep.ID);
+					if (skipNote.tick > tail.tick)
+						break;
+					float tickTime = accumulateScaledDuration(skipNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
+					float tick_t = unlerp(head.time, tail.time, tickTime);
+					float skipLeft = easeFunction(head.left, tail.left, tick_t);
+					float skipRight = easeFunction(head.right, tail.right, tick_t);
+					drawData.drawingHoldTicks.push_back(DrawingHoldTick{
+						skipStep.ID,
+						skipLeft + (skipRight - skipLeft) / 2,
+						Range{tickTime - noteDuration, tickTime}
+					});
+					++headIdx;
+				}
+				head = tail;
+				hispeedSteps.pop();
+			}
+			if (!hispeedSteps.empty() && hispeedSteps.front().tick == tailNote.tick)
+				hispeedSteps.pop();
+			auto easeFunction = getEaseFunction(head.ease);
+			DrawingHoldStep tail = {
+				tailNote.tick,
+				accumulateScaledDuration(tailNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
+				Engine::laneToLeft(tailNote.lane),
+				Engine::laneToLeft(tailNote.lane) + tailNote.width,
+				tailStep.ease
+			};
+			float endTime = accumulateDuration(tailNote.tick, TICKS_PER_BEAT, score.tempoChanges);
+			drawData.drawingHoldSegments.push_back(DrawingHoldSegment {
+				holdNote.end,
+				head.time, head.left, head.right,
+				tail.time, tail.left, tail.right,
+				startTime, endTime,
+				activeTime,
+				head.ease,
+				holdNote.isGuide(),
+			});
+			startTime = endTime;
+			while ((headIdx + 1) < tailIdx)
+			{
+				const HoldStep& skipStep = holdNote.steps[headIdx + 1];
+				const Note& skipNote = score.notes.at(skipStep.ID);
+				if (skipNote.tick > tail.tick)
+					break;
+				float tickTime = accumulateScaledDuration(skipNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
+				float tick_t = unlerp(head.time, tail.time, tickTime);
+				float skipLeft = easeFunction(head.left, tail.left, tick_t);
+				float skipRight = easeFunction(head.right, tail.right, tick_t);
+				drawData.drawingHoldTicks.push_back(DrawingHoldTick{
+					skipStep.ID,
+					skipLeft + (skipRight - skipLeft) / 2,
+					Range{tickTime - noteDuration, tickTime}
+				});
+				++headIdx;
+			}
+			if (tailStep.type != HoldStepType::Hidden)
+			{
+				float tickTime = accumulateScaledDuration(tailNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges);
+				drawData.drawingHoldTicks.push_back(DrawingHoldTick{
+					tailNote.ID,
+					getNoteCenter(tailNote),
+					{tickTime - noteDuration, tickTime}
+				});
+			}
+			head = tail;
+			++headIdx;
+		}
 	}
 
 	static bool ensureValidParticle(ParticleEffectType &effectType)

@@ -371,7 +371,7 @@ namespace MikuMikuWorld
 		return std::make_pair(left, right);
 	}
 
-	std::pair<float, float> ScorePreviewWindow::getHoldStepBound(const Note &note, const Score &score, int curTick) const
+	std::pair<float, float> ScorePreviewWindow::getHoldStepBound(const Note &note, const Score &score) const
 	{
 		auto& holdNotes = score.holdNotes.at(note.parentID);
 		int curStepIdx = findHoldStep(holdNotes, note.ID);
@@ -391,11 +391,27 @@ namespace MikuMikuWorld
 		const Note& endNote = score.notes.at(it == holdNotes.steps.end() ? holdNotes.end : it->ID);
 		auto [leftStop, rightStop] = getNoteBound(endNote);
 
-		float progress = unlerp(
-			accumulateScaledDuration(startNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
-			accumulateScaledDuration(endNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
-			accumulateScaledDuration(note.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges)
-		);
+		float startTick = startNote.tick;
+		auto hisStepIt = std::lower_bound(score.hiSpeedChanges.begin(), score.hiSpeedChanges.end(), note.tick, [](const HiSpeedChange& hispeed, int tick) { return hispeed.tick < tick; });
+		if (hisStepIt != score.hiSpeedChanges.begin() && (--hisStepIt)->tick > startNote.tick)
+		{
+			float t = unlerp(startNote.tick, endNote.tick, hisStepIt->tick);
+			leftStart = easeFunc(leftStart, leftStop, t);
+			rightStart = easeFunc(rightStart, rightStop, t);
+			startTick = hisStepIt->tick;
+		}
+		float endTick = endNote.tick;
+		auto hisStepEnd = std::upper_bound(score.hiSpeedChanges.begin(), score.hiSpeedChanges.end(), note.tick, [](int tick, const HiSpeedChange& hispeed) { return tick < hispeed.tick; });
+		if (hisStepEnd != score.hiSpeedChanges.end() && hisStepEnd->tick < endNote.tick)
+		{
+			float t = unlerp(startNote.tick, endNote.tick, hisStepEnd->tick);
+			auto [oldLeftStart, oldRightStart] = getNoteBound(startNote);
+			leftStop = easeFunc(oldLeftStart, leftStop, t);
+			rightStop = easeFunc(oldRightStart, rightStop, t);
+			endTick = hisStepEnd->tick;
+		}
+
+		float progress = unlerp(startTick, endTick, note.tick);
 
 		return std::make_pair(
 			easeFunc(leftStart, leftStop, progress),
@@ -407,25 +423,41 @@ namespace MikuMikuWorld
 	{
 		const auto isNotHoldSkip = [](const HoldStep& step) { return step.type != HoldStepType::Skip; };
 		const HoldNote& holdNotes = score.holdNotes.at(note.ID);
-		auto it = std::lower_bound(holdNotes.steps.begin(), holdNotes.steps.end(), curTick, [&score](const HoldStep& step, int tick) { return score.notes.at(step.ID).tick < tick; });
-		auto rit = std::find_if(std::make_reverse_iterator(it), holdNotes.steps.rend(), isNotHoldSkip);
-		const HoldStep& startHoldStep = rit == holdNotes.steps.rend() ? holdNotes.start : *rit;
+		auto curStepIt = std::lower_bound(holdNotes.steps.begin(), holdNotes.steps.end(), curTick, [&score](const HoldStep& step, int tick) { return score.notes.at(step.ID).tick < tick; });
+		auto startStepIt = std::find_if(std::make_reverse_iterator(curStepIt), holdNotes.steps.rend(), isNotHoldSkip);
+		const HoldStep& startHoldStep = startStepIt == holdNotes.steps.rend() ? holdNotes.start : *startStepIt;
 
-		const Note& startNote = rit == holdNotes.steps.rend() ? note : score.notes.at(rit->ID);
+		const Note& startNote = startStepIt == holdNotes.steps.rend() ? note : score.notes.at(startStepIt->ID);
+		if (startNote.tick == curTick) return getNoteBound(startNote);
 		auto [leftStart, rightStart] = getNoteBound(startNote);
-		if (startNote.tick == curTick) return std::make_pair(leftStart, rightStart);
 
-		auto end = std::find_if(it, holdNotes.steps.end(), isNotHoldSkip);
+		auto end = std::find_if(curStepIt, holdNotes.steps.end(), isNotHoldSkip);
 		const Note& endNote = score.notes.at(end == holdNotes.steps.end() ? holdNotes.end : end->ID);
+		if (endNote.tick == curTick) return getNoteBound(endNote);
 		auto [leftStop, rightStop] = getNoteBound(endNote);
-		if (endNote.tick == curTick) return std::make_pair(leftStop, rightStop);
-
 		auto easeFunc = getEaseFunction(startHoldStep.ease);
-		float progress = unlerp(
-			accumulateScaledDuration(startNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
-			accumulateScaledDuration(endNote.tick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges),
-			accumulateScaledDuration(curTick, TICKS_PER_BEAT, score.tempoChanges, score.hiSpeedChanges)
-		);
+
+		float startTick = startNote.tick;
+		auto hisStepIt = std::lower_bound(score.hiSpeedChanges.begin(), score.hiSpeedChanges.end(), curTick, [](const HiSpeedChange& hispeed, int tick) { return hispeed.tick < tick; });
+		if (hisStepIt != score.hiSpeedChanges.begin() && (--hisStepIt)->tick > startNote.tick)
+		{
+			float t = unlerp(startNote.tick, endNote.tick, hisStepIt->tick);
+			leftStart = easeFunc(leftStart, leftStop, t);
+			rightStart = easeFunc(rightStart, rightStop, t);
+			startTick = hisStepIt->tick;
+		}
+		float endTick = endNote.tick;
+		auto hisStepEnd = std::upper_bound(score.hiSpeedChanges.begin(), score.hiSpeedChanges.end(), curTick, [](int tick, const HiSpeedChange& hispeed) { return tick < hispeed.tick; });
+		if (hisStepEnd != score.hiSpeedChanges.end() && hisStepEnd->tick < endNote.tick)
+		{
+			float t = unlerp(startNote.tick, endNote.tick, hisStepEnd->tick);
+			auto [oldLeftStart, oldRightStart] = getNoteBound(startNote);
+			leftStop = easeFunc(oldLeftStart, leftStop, t);
+			rightStop = easeFunc(oldRightStart, rightStop, t);
+			endTick = hisStepEnd->tick;
+		}
+
+		float progress = unlerp(startTick, endTick, curTick);
 
 		return std::make_pair(
 			easeFunc(leftStart, leftStop, progress),
@@ -587,7 +619,7 @@ namespace MikuMikuWorld
 
 	void ScorePreviewWindow::drawHoldCurves(const ScoreContext &context, Renderer *renderer)
 	{
-		const float total_tm = accumulateScaledDuration(context.scorePreviewDrawData.maxTicks, TICKS_PER_BEAT, context.score.tempoChanges, context.score.hiSpeedChanges);
+		const float total_tm = accumulateDuration(context.scorePreviewDrawData.maxTicks, TICKS_PER_BEAT, context.score.tempoChanges);
 		const float current_tm = accumulateDuration(context.currentTick, TICKS_PER_BEAT, context.score.tempoChanges);
 		const float scaled_tm = accumulateScaledDuration(context.currentTick, TICKS_PER_BEAT, context.score.tempoChanges, context.score.hiSpeedChanges);
 		const float noteDuration = Engine::getNoteDuration(config.pvNoteSpeed);
@@ -596,13 +628,14 @@ namespace MikuMikuWorld
 		
 		for (auto& segment : drawData.drawingHoldSegments)
 		{
-			if (scaled_tm < (segment.headTime - noteDuration) || scaled_tm >= segment.tailTime)
+			if (scaled_tm < (segment.headTime - noteDuration) || current_tm >= segment.endTime)
 				continue;
 			
 			const Note& holdEnd = context.score.notes.at(segment.endID);
 			const Note& holdStart = context.score.notes.at(holdEnd.parentID);
 			float holdStartCenter = Engine::getNoteCenter(holdStart) * mirror, holdStart_tm, holdEnd_tm;
-			bool isActivated = current_tm >= segment.startTime;
+			bool isHoldActivated = current_tm >= segment.activeTime;
+			bool isSegmentActivated = current_tm >= segment.startTime;
 
 			int textureID = segment.isGuide ? noteTextures.touchLine : noteTextures.holdPath;
 			if (textureID == -1)
@@ -620,18 +653,16 @@ namespace MikuMikuWorld
 			const int steps = (segment.ease == EaseType::Linear ? 10 : 15)
 				+ static_cast<int>(std::log(std::max((pathEnd_tm - pathStart_tm) / noteDuration, 4.5399e-5f)) + 0.5f); // Reduce steps if the segment is relatively small
 			const auto ease = getEaseFunction(segment.ease);
-			const Note& segmentStart = context.score.notes.at(segment.headID);
-			float startLeft = Engine::laneToLeft(segmentStart.lane);
-			float startRight = Engine::laneToLeft(segmentStart.lane) + segmentStart.width;
-			const Note& segmentEnd = context.score.notes.at(segment.tailID);
-			float endLeft = Engine::laneToLeft(segmentEnd.lane);
-			float endRight = Engine::laneToLeft(segmentEnd.lane) + segmentEnd.width;
+			float startLeft = segment.headLeft;
+			float startRight = segment.headRight;
+			float endLeft = segment.tailLeft;
+			float endRight = segment.tailRight;
 
-			if (scaled_tm > segment.headTime && context.score.holdNotes.at(holdStart.ID).startType == HoldNoteType::Normal)
+			if (isSegmentActivated && context.score.holdNotes.at(holdStart.ID).startType == HoldNoteType::Normal)
 			{
 				float t = unlerp(segment.headTime, segment.tailTime, scaled_tm);
 				float l = ease(startLeft, endLeft, t), r = ease(startRight, endRight, t);
-				drawNoteBase(renderer, holdStart, l, r, 1, segment.startTime / total_tm);
+				drawNoteBase(renderer, holdStart, l, r, 1, segment.activeTime / total_tm);
 				if (holdStart.friction)
 					drawTraceDiamond(renderer, holdStart, l, r, 1);
 			}
@@ -670,7 +701,7 @@ namespace MikuMikuWorld
 				auto vPos = Engine::perspectiveQuadvPos(stepStartLeft, stepEndLeft, stepStartRight, stepEndRight, stepTop, stepBottom);
 				auto model = DirectX::XMMatrixIdentity();
 				float alpha = config.pvHoldAlpha;
-				int zIndex = Engine::getZIndex(SpriteLayer::HOLD_PATH, holdStartCenter, segment.headTime / total_tm);
+				int zIndex = Engine::getZIndex(SpriteLayer::HOLD_PATH, holdStartCenter, segment.activeTime / total_tm);
 
 				float spr_x1, spr_x2, spr_y1, spr_y2;
 				if (segment.isGuide)
@@ -688,11 +719,11 @@ namespace MikuMikuWorld
 					spr_y2 = pathSprite.getY2();
 				}
 
-				if (config.pvHoldAnimation && isActivated && isArrayIndexInBounds(sprIndex - 1, pathTexture.sprites))
+				if (config.pvHoldAnimation && isHoldActivated && isArrayIndexInBounds(sprIndex - 1, pathTexture.sprites))
 				{
 					const Sprite& activeSprite = pathTexture.sprites[sprIndex - 1];
 					const int norm2ActiveOffset = activeSprite.getY1() - pathSprite.getY1();
-					float delta_tm = current_tm - segment.startTime;
+					float delta_tm = current_tm - segment.activeTime;
 					float normalAplha = (std::cos(delta_tm * NUM_PI * 2) + 2) / 3.;
 
 					renderer->drawQuad(vPos, model, pathTexture, spr_x1, spr_x2, spr_y1, spr_y2, defaultTint.scaleAlpha(alpha * normalAplha), zIndex);
@@ -828,7 +859,7 @@ namespace MikuMikuWorld
 			{
 			case ParticleEffectType::NoteLongAmongCircular:
 			case ParticleEffectType::NoteLongAmongCriticalCircular:
-				std::tie(noteLeft, noteRight) = getHoldStepBound(note, context.score, context.currentTick);
+				std::tie(noteLeft, noteRight) = getHoldStepBound(note, context.score);
 				break;
 			default:
 				std::tie(noteLeft, noteRight) = getNoteBound(note);
